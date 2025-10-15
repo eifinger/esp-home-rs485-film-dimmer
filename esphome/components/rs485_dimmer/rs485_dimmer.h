@@ -1,9 +1,12 @@
 #pragma once
 
 #include "esphome/core/component.h"
+#include "esphome/core/log.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/light/light_output.h"
 #include "esphome/components/light/light_state.h"
+#include <array>
+#include <algorithm>
 
 namespace esphome {
 namespace rs485_dimmer {
@@ -14,9 +17,10 @@ static const uint8_t CMD_WRITE = 0x09;
 static const uint8_t CMD_REPLY = 0x0A;
 static const uint8_t DATA_OFF = 0x00;
 static const uint8_t DATA_ON = 0xFF;
-static const int PACKET_LENGTH = 11;
+static const size_t PACKET_LENGTH = 11;
 static const uint32_t POLLING_INTERVAL_MS = 15000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 5000;
+static const char *const TAG = "rs485_dimmer";
 
 class RS485Dimmer : public light::LightOutput, public Component, public uart::UARTDevice {
  public:
@@ -25,12 +29,25 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   void setup() {
     this->tx_enable_pin_->setup();
     this->tx_enable_pin_->digital_write(false);
-    
-    ESP_LOGI("rs485_dimmer", "Starting address discovery...");
+
+    ESP_LOGI(TAG, "Starting address discovery...");
     this->discovery_start_time_ = millis();
     // Send the special "get address" command: AA 00 00 00 00 09 00 00 00 55 99
     uint8_t discovery_command[PACKET_LENGTH] = {0xAA, 0x00, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x55, 0x99};
     this->send_packet(discovery_command);
+  }
+
+  float get_setup_priority() const override { return setup_priority::DATA; }
+
+  void dump_config() override {
+    ESP_LOGCONFIG(TAG, "RS485 Dimmer:");
+    LOG_PIN("  TX Enable Pin: ", this->tx_enable_pin_);
+    if (address_discovered_) {
+      ESP_LOGCONFIG(TAG, "  Address: %02X:%02X:%02X:%02X",
+                    address_[0], address_[1], address_[2], address_[3]);
+    } else {
+      ESP_LOGCONFIG(TAG, "  Address: Not discovered yet");
+    }
   }
 
   light::LightTraits get_traits() override {
@@ -53,9 +70,10 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   }
 
   void loop() override {
+    if (this->is_failed()) return;
     if (!this->address_discovered_) {
       if (millis() - this->discovery_start_time_ > DISCOVERY_TIMEOUT_MS) {
-        ESP_LOGE("rs485_dimmer", "Address discovery failed! Check wiring and power. Component will not operate.");
+        ESP_LOGE(TAG, "Address discovery failed! Check wiring and power. Component will not operate.");
         this->mark_failed();
         this->address_discovered_ = true;
         return;
@@ -79,7 +97,7 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
         // Store the discovered address ---
         std::copy(buffer, buffer + 4, this->address_.begin());
         this->address_discovered_ = true;
-        ESP_LOGI("rs485_dimmer", "Address discovered: %02X:%02X:%02X:%02X", 
+        ESP_LOGI(TAG, "Address discovered: %02X:%02X:%02X:%02X", 
                  this->address_[0], this->address_[1], this->address_[2], this->address_[3]);
         continue; // Skip further processing on this loop
       }
@@ -126,9 +144,8 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
     this->send_packet(command);
   }
 
-  void send_packet(uint8_t packet) {
+  void send_packet(const uint8_t *packet) {
     this->tx_enable_pin_->digital_write(true);
-    delay(1);
     this->write_array(packet, PACKET_LENGTH);
     this->flush();
     this->tx_enable_pin_->digital_write(false);
