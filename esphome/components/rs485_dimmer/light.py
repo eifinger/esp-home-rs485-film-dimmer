@@ -4,6 +4,7 @@ from esphome.components import light, uart
 from esphome.const import CONF_OUTPUT_ID
 from esphome import pins
 
+CODEOWNERS = ["@eifinger"]
 DEPENDENCIES = ['uart']
 
 rs485_dimmer_ns = cg.esphome_ns.namespace('rs485_dimmer')
