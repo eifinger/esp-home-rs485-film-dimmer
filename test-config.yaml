@@ -1,0 +1,31 @@
+esphome:
+  name: components_test
+  build_path: build/components_test
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+external_components:
+  - source:
+      type: local
+      path: esphome/components
+    components:
+      - rs485_dimmer
+    refresh: always
+
+uart:
+  id: rs485_bus
+  tx_pin: GPIO22 # <-- Change this according to your pin layout
+  rx_pin: GPIO21 # <-- Change this according to your pin layout
+  baud_rate: 9600
+  stop_bits: 1
+
+light:
+  - platform: rs485_dimmer
+    name: "Smart Film Dimmer"
+    uart_id: rs485_bus
+    tx_enable_pin: GPIO23 # <-- Change this according to your pin layout

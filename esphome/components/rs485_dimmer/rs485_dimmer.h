@@ -25,7 +25,7 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   void setup() {
     this->tx_enable_pin_->setup();
     this->tx_enable_pin_->digital_write(false);
-    
+
     ESP_LOGI("rs485_dimmer", "Starting address discovery...");
     this->discovery_start_time_ = millis();
     // Send the special "get address" command: AA 00 00 00 00 09 00 00 00 55 99
@@ -40,14 +40,16 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   }
 
   void write_state(light::LightState *state) override {
-    if (!this->address_discovered_) return;
-    this->state_ = state; 
+    if (!this->address_discovered_)
+      return;
+    this->state_ = state;
     uint8_t data_to_send = this->state_to_data_byte_();
     send_command(data_to_send);
   }
-  
+
   void update() {
-    if (!this->state_ || !this->address_discovered_) return;
+    if (!this->state_ || !this->address_discovered_)
+      return;
     uint8_t data_to_send = this->state_to_data_byte_();
     send_command(data_to_send);
   }
@@ -66,41 +68,43 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
         this->update();
       }
     }
-    
+
     // listen for incoming data
     uint8_t buffer[PACKET_LENGTH];
     while (available() >= PACKET_LENGTH) {
-      if (read() != START_BYTE) continue;
-      if (!read_array(buffer, PACKET_LENGTH - 1)) return;
-      if (buffer[9] != END_BYTE) continue;
-      
+      if (read() != START_BYTE)
+        continue;
+      if (!read_array(buffer, PACKET_LENGTH - 1))
+        return;
+      if (buffer[9] != END_BYTE)
+        continue;
+
       // Check if this is the discovery reply (host sent 09, device replies 0A or 09)
       if (!this->address_discovered_ && (buffer[4] == CMD_REPLY || buffer[4] == CMD_WRITE)) {
         // Store the discovered address ---
         std::copy(buffer, buffer + 4, this->address_.begin());
         this->address_discovered_ = true;
-        ESP_LOGI("rs485_dimmer", "Address discovered: %02X:%02X:%02X:%02X", 
-                 this->address_[0], this->address_[1], this->address_[2], this->address_[3]);
-        continue; // Skip further processing on this loop
+        ESP_LOGI("rs485_dimmer", "Address discovered: %02X:%02X:%02X:%02X", this->address_[0], this->address_[1],
+                 this->address_[2], this->address_[3]);
+        continue;  // Skip further processing on this loop
       }
 
-      if (this->address_discovered_ && this->state_ && 
-          buffer[0] == this->address_[0] && buffer[1] == this->address_[1] &&
-          buffer[2] == this->address_[2] && buffer[3] == this->address_[3] &&
+      if (this->address_discovered_ && this->state_ && buffer[0] == this->address_[0] &&
+          buffer[1] == this->address_[1] && buffer[2] == this->address_[2] && buffer[3] == this->address_[3] &&
           (buffer[4] == CMD_REPLY || buffer[4] == CMD_WRITE)) {
-        
         uint8_t data0 = buffer[5];
         bool new_power = (data0 != DATA_OFF);
         float new_brightness = 1.0f;
-        if (new_power && data0 != DATA_ON) new_brightness = (data0 - 1) / 253.0f;
+        if (new_power && data0 != DATA_ON)
+          new_brightness = (data0 - 1) / 253.0f;
 
-        if (new_power != this->state_->remote_values.is_on() || 
+        if (new_power != this->state_->remote_values.is_on() ||
             (new_power && (abs(new_brightness - this->state_->remote_values.get_brightness()) > 0.01))) {
-            
-            auto call = this->state_->make_call();
-            call.set_state(new_power);
-            if(new_power) call.set_brightness(new_brightness);
-            call.perform();
+          auto call = this->state_->make_call();
+          call.set_state(new_power);
+          if (new_power)
+            call.set_brightness(new_brightness);
+          call.perform();
         }
       }
     }
@@ -110,18 +114,26 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   uint8_t state_to_data_byte_() {
     bool power = this->state_->remote_values.is_on();
     float brightness_float = this->state_->remote_values.get_brightness();
-    if (!power) return DATA_OFF;
-    if (brightness_float >= 0.99f) return DATA_ON; 
-    return 1 + (uint8_t)(brightness_float * 253.0f);
+    if (!power)
+      return DATA_OFF;
+    if (brightness_float >= 0.99f)
+      return DATA_ON;
+    return 1 + (uint8_t) (brightness_float * 253.0f);
   }
 
   void send_command(uint8_t data0) {
     uint8_t command[PACKET_LENGTH] = {
-      START_BYTE,
-      this->address_[0], this->address_[1], this->address_[2], this->address_[3],
-      CMD_WRITE,
-      data0, 0x00, 0x00, 0x00,
-      END_BYTE
+        START_BYTE,
+        this->address_[0],
+        this->address_[1],
+        this->address_[2],
+        this->address_[3],
+        CMD_WRITE,
+        data0,
+        0x00,
+        0x00,
+        0x00,
+        END_BYTE,
     };
     this->send_packet(command);
   }
@@ -135,12 +147,12 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
   }
 
   GPIOPin *tx_enable_pin_;
-  std::array<uint8_t, 4> address_{}; // Initialized empty
+  std::array<uint8_t, 4> address_{};  // Initialized empty
   light::LightState *state_{nullptr};
   uint32_t last_update_{0};
   bool address_discovered_{false};
   uint32_t discovery_start_time_{0};
 };
 
-} // namespace rs485_dimmer
-} // namespace esphome
+}  // namespace rs485_dimmer
+}  // namespace esphome
