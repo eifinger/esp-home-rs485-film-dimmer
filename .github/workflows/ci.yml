@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: '0 7 * * *'  # Every day at 07:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref}}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.esphome-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        esphome-version:
+          - stable
+          - beta
+          - dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run clang-format
+        run: uvx clang-format esphome/components/rs485_dimmer/rs485_dimmer.h
+
+      - name: Build
+        uses: esphome/build-action@f93bda46d83c761cd25bbfdf350cfe508a0a39d5 # v7.1.0
+        with:
+          version: ${{ matrix.esphome-version }}
+          yaml-file: test-config.yaml
