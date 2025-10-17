@@ -1,0 +1,14 @@
+[project]
+name = "esp-home-rs485-film-dimmer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "clang-format>=21.1.2",
+    "esphome>=2025.10.1",
+    "ruff>=0.14.1",
+]
