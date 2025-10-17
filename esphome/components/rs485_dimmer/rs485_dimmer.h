@@ -3,8 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "esphome/components/uart/uart.h"
-#include "esphome/components/light/light_output.h"
-#include "esphome/components/light/light_state.h"
+#include "esphome/components/cover/cover.h"
 #include <array>
 #include <algorithm>
 
@@ -22,7 +21,7 @@ static const uint32_t POLLING_INTERVAL_MS = 15000;
 static const uint32_t DISCOVERY_TIMEOUT_MS = 5000;
 static const char *const TAG = "rs485_dimmer";
 
-class RS485Dimmer : public light::LightOutput, public Component, public uart::UARTDevice {
+class RS485Dimmer : public cover::Cover, public Component, public uart::UARTDevice {
  public:
   void set_tx_enable_pin(GPIOPin *tx_enable_pin) { this->tx_enable_pin_ = tx_enable_pin; }
 
@@ -51,24 +50,38 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
     }
   }
 
-  light::LightTraits get_traits() override {
-    auto traits = light::LightTraits();
-    traits.set_supported_color_modes({light::ColorMode::BRIGHTNESS});
+  cover::CoverTraits get_traits() override {
+    auto traits = cover::CoverTraits();
+    traits.set_supports_position(true);
+    traits.set_supports_tilt(false);
+    traits.set_is_assumed_state(false);
     return traits;
   }
 
-  void write_state(light::LightState *state) override {
+  void control(const cover::CoverCall &call) override {
     if (!this->address_discovered_)
       return;
-    this->state_ = state;
-    uint8_t data_to_send = this->state_to_data_byte_();
+
+    if (call.get_position().has_value()) {
+      this->position = *call.get_position();
+    }
+    if (call.get_stop()) {
+      // Stop command - send current position
+      uint8_t data_to_send = this->position_to_data_byte_();
+      send_command(data_to_send);
+      this->publish_state();
+      return;
+    }
+
+    uint8_t data_to_send = this->position_to_data_byte_();
     send_command(data_to_send);
+    this->publish_state();
   }
 
   void update() {
-    if (!this->state_ || !this->address_discovered_)
+    if (!this->address_discovered_)
       return;
-    uint8_t data_to_send = this->state_to_data_byte_();
+    uint8_t data_to_send = this->position_to_data_byte_();
     send_command(data_to_send);
   }
 
@@ -109,36 +122,35 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
         continue;  // Skip further processing on this loop
       }
 
-      if (this->address_discovered_ && this->state_ && buffer[0] == this->address_[0] &&
-          buffer[1] == this->address_[1] && buffer[2] == this->address_[2] && buffer[3] == this->address_[3] &&
+      if (this->address_discovered_ && buffer[0] == this->address_[0] && buffer[1] == this->address_[1] &&
+          buffer[2] == this->address_[2] && buffer[3] == this->address_[3] &&
           (buffer[4] == CMD_REPLY || buffer[4] == CMD_WRITE)) {
         uint8_t data0 = buffer[5];
-        bool new_power = (data0 != DATA_OFF);
-        float new_brightness = 1.0f;
-        if (new_power && data0 != DATA_ON)
-          new_brightness = (data0 - 1) / 253.0f;
+        float new_position;
 
-        if (new_power != this->state_->remote_values.is_on() ||
-            (new_power && (abs(new_brightness - this->state_->remote_values.get_brightness()) > 0.01))) {
-          auto call = this->state_->make_call();
-          call.set_state(new_power);
-          if (new_power)
-            call.set_brightness(new_brightness);
-          call.perform();
+        if (data0 == DATA_OFF) {
+          new_position = 0.0f;  // Fully closed
+        } else if (data0 == DATA_ON) {
+          new_position = 1.0f;  // Fully open
+        } else {
+          new_position = (data0 - 1) / 253.0f;
+        }
+
+        if (abs(new_position - this->position) > 0.01f) {
+          this->position = new_position;
+          this->publish_state();
         }
       }
     }
   }
 
  protected:
-  uint8_t state_to_data_byte_() {
-    bool power = this->state_->remote_values.is_on();
-    float brightness_float = this->state_->remote_values.get_brightness();
-    if (!power)
+  uint8_t position_to_data_byte_() {
+    if (this->position <= 0.01f)
       return DATA_OFF;
-    if (brightness_float >= 0.99f)
+    if (this->position >= 0.99f)
       return DATA_ON;
-    return 1 + (uint8_t) (brightness_float * 253.0f);
+    return 1 + (uint8_t) (this->position * 253.0f);
   }
 
   void send_command(uint8_t data0) {
@@ -167,7 +179,6 @@ class RS485Dimmer : public light::LightOutput, public Component, public uart::UA
 
   GPIOPin *tx_enable_pin_;
   std::array<uint8_t, 4> address_{};  // Initialized empty
-  light::LightState *state_{nullptr};
   uint32_t last_update_{0};
   bool address_discovered_{false};
   uint32_t discovery_start_time_{0};

@@ -24,7 +24,7 @@ uart:
   baud_rate: 9600
   stop_bits: 1
 
-light:
+cover:
   - platform: rs485_dimmer
     name: "Smart Film Dimmer"
     uart_id: rs485_bus
