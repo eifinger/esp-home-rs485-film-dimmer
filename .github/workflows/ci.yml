@@ -32,6 +32,12 @@ jobs:
       - name: Run clang-format
         run: uvx clang-format esphome/components/rs485_dimmer/rs485_dimmer.h
 
+      - name: Run ruff check
+        run: uvx ruff check esphome/components/rs485_dimmer
+
+      - name: Run ruff format
+        run: uvx ruff format --check esphome/components/rs485_dimmer
+
       - name: Build
         uses: esphome/build-action@f93bda46d83c761cd25bbfdf350cfe508a0a39d5 # v7.1.0
         with:
